@@ -4,6 +4,9 @@ import {
   AlertTriangle, FileText, Loader2, HeartPulse, CalendarDays
 } from "lucide-react";
 
+// URL de votre API backend (ajustez le port/domaine si nécessaire)
+const API_URL = "http://localhost:5000/api/adhesions";
+
 const C = {
   primary: "#0E5D45",
   primaryDark: "#0A4735",
@@ -28,12 +31,6 @@ const MUTUELLES = [
   "Mutuelle Jappoo Thiès", "Mutuelle Santé Rufisque", "Mutuelle Kaolack Solidarité",
   "Mutuelle Yeksi Dakar", "Mutuelle Ziguinchor Santé",
 ];
-
-const STORAGE_KEY = "cmu:adhesions";
-
-function uid() {
-  return "a" + Math.random().toString(36).slice(2, 10);
-}
 
 function fmtDate(d) {
   if (!d) return "—";
@@ -77,11 +74,8 @@ function addPeriod(dateStr, periodicite) {
 
 const today = new Date().toISOString().slice(0, 10);
 
-// Tableau initial vide : aucun nom pré-rempli par défaut
-const seed = () => [];
-
 const emptyForm = {
-  id: null, numeroAdhesion: "", beneficiaire: "", numeroCarte: "",
+  id: null, _id: null, numeroAdhesion: "", beneficiaire: "", numeroCarte: "",
   mutuelle: MUTUELLES[0], typeCotisation: "Individuelle", montant: "",
   periodicite: "Mensuelle", dateAdhesion: today, dateExpiration: "",
   statutPaiement: "En attente", statutAdhesion: "En cours de validation",
@@ -99,35 +93,28 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  // CHARGEMENT DES DONNÉES DEPUIS LE BACKEND
   useEffect(() => {
-    (async () => {
+    async function fetchAdhesions() {
       try {
-        const res = window.storage ? await window.storage.get(STORAGE_KEY, false) : null;
-        const val = res && res.value ? JSON.parse(res.value) : seed();
-        setItems(val);
-      } catch {
-        setItems(seed());
+        const res = await fetch(API_URL);
+        if (!res.ok) throw new Error("Erreur réseau");
+        const data = await res.json();
+        
+        // Normaliser les IDs (MongoDB utilise _id, SQL utilise id)
+        const normalized = data.map((item) => ({
+          ...item,
+          id: item.id || item._id,
+        }));
+        setItems(normalized);
+      } catch (err) {
+        setToast({ kind: "warn", msg: "Impossible de charger les adhésions depuis le serveur." });
       } finally {
         setLoaded(true);
       }
-    })();
+    }
+    fetchAdhesions();
   }, []);
-
-  useEffect(() => {
-    if (!loaded) return;
-    (async () => {
-      try {
-        setSaving(true);
-        if (window.storage) {
-          await window.storage.set(STORAGE_KEY, JSON.stringify(items), false);
-        }
-      } catch {
-        // ignore
-      } finally {
-        setSaving(false);
-      }
-    })();
-  }, [items, loaded]);
 
   useEffect(() => {
     if (!toast) return;
@@ -153,10 +140,10 @@ export default function App() {
       .filter((i) => {
         if (!q) return true;
         return (
-          i.beneficiaire.toLowerCase().includes(q) ||
-          i.numeroAdhesion.toLowerCase().includes(q) ||
-          i.numeroCarte.toLowerCase().includes(q) ||
-          i.mutuelle.toLowerCase().includes(q)
+          (i.beneficiaire && i.beneficiaire.toLowerCase().includes(q)) ||
+          (i.numeroAdhesion && i.numeroAdhesion.toLowerCase().includes(q)) ||
+          (i.numeroCarte && i.numeroCarte.toLowerCase().includes(q)) ||
+          (i.mutuelle && i.mutuelle.toLowerCase().includes(q))
         );
       })
       .sort((a, b) => (a.dateAdhesion < b.dateAdhesion ? 1 : -1));
@@ -172,24 +159,68 @@ export default function App() {
     setModalOpen(true);
   }
 
-  function save(e) {
+  // SAUVEGARDE (POST / PUT) VERS LE BACKEND
+  async function save(e) {
     e.preventDefault();
     if (!form.beneficiaire.trim() || !form.numeroAdhesion.trim() || !form.montant) return;
-    const payload = { ...form, dateExpiration: form.dateExpiration || addPeriod(form.dateAdhesion, form.periodicite) };
-    if (form.id) {
-      setItems((prev) => prev.map((i) => (i.id === form.id ? payload : i)));
-      setToast({ kind: "ok", msg: "Adhésion mise à jour." });
-    } else {
-      setItems((prev) => [...prev, { ...payload, id: uid() }]);
-      setToast({ kind: "ok", msg: "Adhésion enregistrée." });
+
+    const targetId = form.id || form._id;
+    const payload = {
+      ...form,
+      dateExpiration: form.dateExpiration || addPeriod(form.dateAdhesion, form.periodicite),
+    };
+
+    setSaving(true);
+    try {
+      if (targetId) {
+        // Modification (PUT)
+        const res = await fetch(`${API_URL}/${targetId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error("Erreur de modification");
+        const updated = await res.json();
+        const normUpdated = { ...updated, id: updated.id || updated._id };
+
+        setItems((prev) => prev.map((i) => ((i.id || i._id) === targetId ? normUpdated : i)));
+        setToast({ kind: "ok", msg: "Adhésion mise à jour." });
+      } else {
+        // Création (POST)
+        const res = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error("Erreur de création");
+        const created = await res.json();
+        const normCreated = { ...created, id: created.id || created._id };
+
+        setItems((prev) => [...prev, normCreated]);
+        setToast({ kind: "ok", msg: "Adhésion enregistrée." });
+      }
+      setModalOpen(false);
+    } catch (err) {
+      setToast({ kind: "warn", msg: "Erreur lors de l'enregistrement." });
+    } finally {
+      setSaving(false);
     }
-    setModalOpen(false);
   }
 
-  function doDelete(id) {
-    setItems((prev) => prev.filter((i) => i.id !== id));
-    setConfirmDelete(null);
-    setToast({ kind: "warn", msg: "Adhésion supprimée." });
+  // SUPPRESSION (DELETE) DANS LE BACKEND
+  async function doDelete(item) {
+    const targetId = item.id || item._id;
+    try {
+      const res = await fetch(`${API_URL}/${targetId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Erreur de suppression");
+
+      setItems((prev) => prev.filter((i) => (i.id || i._id) !== targetId));
+      setToast({ kind: "warn", msg: "Adhésion supprimée." });
+    } catch (err) {
+      setToast({ kind: "warn", msg: "Impossible de supprimer l'adhésion." });
+    } finally {
+      setConfirmDelete(null);
+    }
   }
 
   const fontStyles = `
@@ -292,7 +323,7 @@ export default function App() {
 
         {!loaded ? (
           <div className="flex items-center justify-center py-24" style={{ color: C.inkSoft }}>
-            <Loader2 size={18} className="animate-spin mr-2" /> Chargement des adhésions…
+            <Loader2 size={18} className="animate-spin mr-2" /> Chargement des adhésions depuis le serveur…
           </div>
         ) : filtered.length === 0 ? (
           <EmptyState hasItems={items.length > 0} onNew={openNew} />
@@ -300,7 +331,7 @@ export default function App() {
           <ul className="flex flex-col gap-3">
             {filtered.map((item) => (
               <AdhesionRow
-                key={item.id}
+                key={item.id || item._id}
                 item={item}
                 onEdit={() => openEdit(item)}
                 onDelete={() => setConfirmDelete(item)}
@@ -317,14 +348,14 @@ export default function App() {
       </main>
 
       {modalOpen && (
-        <FormModal form={form} setForm={setForm} onClose={() => setModalOpen(false)} onSubmit={save} />
+        <FormModal form={form} setForm={setForm} onClose={() => setModalOpen(false)} onSubmit={save} saving={saving} />
       )}
 
       {confirmDelete && (
         <ConfirmModal
           item={confirmDelete}
           onCancel={() => setConfirmDelete(null)}
-          onConfirm={() => doDelete(confirmDelete.id)}
+          onConfirm={() => doDelete(confirmDelete)}
         />
       )}
 
@@ -468,10 +499,9 @@ function Field({ label, children, span }) {
 
 const inputCls = "px-3 py-2 rounded-lg border text-sm outline-none bg-white";
 
-function FormModal({ form, setForm, onClose, onSubmit }) {
+function FormModal({ form, setForm, onClose, onSubmit, saving }) {
   const upd = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  // Fermer le modal avec la touche Échap
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === "Escape") onClose();
@@ -486,7 +516,7 @@ function FormModal({ form, setForm, onClose, onSubmit }) {
       <form onSubmit={onSubmit} className="relative bg-white w-full sm:max-w-xl sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 bg-white z-10" style={{ borderColor: C.border }}>
           <h2 className="font-display text-lg font-semibold">
-            {form.id ? "Modifier l'adhésion" : "Nouvelle adhésion"}
+            {form.id || form._id ? "Modifier l'adhésion" : "Nouvelle adhésion"}
           </h2>
           <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100">
             <X size={18} />
@@ -553,8 +583,9 @@ function FormModal({ form, setForm, onClose, onSubmit }) {
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: C.sandDark, color: C.ink }}>
             Annuler
           </button>
-          <button type="submit" className="px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.primary }}>
-            {form.id ? "Enregistrer les modifications" : "Enregistrer l'adhésion"}
+          <button disabled={saving} type="submit" className="px-4 py-2 rounded-lg text-sm font-semibold text-white flex items-center gap-2" style={{ background: C.primary }}>
+            {saving && <Loader2 size={14} className="animate-spin" />}
+            {form.id || form._id ? "Enregistrer les modifications" : "Enregistrer l'adhésion"}
           </button>
         </div>
       </form>
