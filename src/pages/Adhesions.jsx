@@ -1,619 +1,1407 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import axios from "axios";
 import {
-  Search, Plus, Pencil, Trash2, X, Wallet, CheckCircle2, Clock,
-  AlertTriangle, FileText, Loader2, HeartPulse, CalendarDays
+  Plus,
+  Search,
+  Edit,
+  Trash2,
+  Eye,
+  X,
+  Loader2,
+  RefreshCw,
+  CreditCard,
+  CheckCircle,
+  AlertCircle,
+  Clock,
+  Ban,
 } from "lucide-react";
 
-// URL de votre API backend (ajustez le port/domaine si nécessaire)
-const API_URL = "http://localhost:5000/api/adhesions";
-
-const C = {
-  primary: "#0E5D45",
-  primaryDark: "#0A4735",
-  primaryLight: "#E7F0EC",
-  sand: "#F7F3EA",
-  sandDark: "#EDE6D6",
-  gold: "#D9A441",
-  goldLight: "#FBF0DC",
-  goldDark: "#A9761F",
-  red: "#BC3A2E",
-  redLight: "#FBE8E6",
-  ink: "#1E2A26",
-  inkSoft: "#5B6B64",
-  border: "#DDD5C2",
-};
-
-const TYPES_COTIS = ["Individuelle", "Familiale"];
-const PERIODICITES = ["Mensuelle", "Trimestrielle", "Annuelle"];
-const STATUTS_PAIEMENT = ["Payée", "En attente", "En retard"];
-const STATUTS_ADHESION = ["Active", "En cours de validation", "Résiliée"];
-const MUTUELLES = [
-  "Mutuelle Jappoo Thiès", "Mutuelle Santé Rufisque", "Mutuelle Kaolack Solidarité",
-  "Mutuelle Yeksi Dakar", "Mutuelle Ziguinchor Santé",
-];
-
-function fmtDate(d) {
-  if (!d) return "—";
-  const dt = new Date(d + "T00:00:00");
-  if (isNaN(dt)) return d;
-  return dt.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-function fmtMontant(n) {
-  const v = Number(n) || 0;
-  return v.toLocaleString("fr-FR") + " FCFA";
-}
-
-function daysUntil(d) {
-  if (!d) return null;
-  const dt = new Date(d + "T00:00:00");
-  if (isNaN(dt)) return null;
-  return Math.ceil((dt.getTime() - Date.now()) / (24 * 3600 * 1000));
-}
-
-function paiementStyle(s) {
-  if (s === "Payée") return { bg: C.primaryLight, fg: C.primaryDark, dot: C.primary, Icon: CheckCircle2 };
-  if (s === "En attente") return { bg: C.goldLight, fg: C.goldDark, dot: C.gold, Icon: Clock };
-  return { bg: C.redLight, fg: C.red, dot: C.red, Icon: AlertTriangle };
-}
-
-function adhesionStyle(s) {
-  if (s === "Active") return { bg: C.primaryLight, fg: C.primaryDark };
-  if (s === "En cours de validation") return { bg: C.goldLight, fg: C.goldDark };
-  return { bg: C.redLight, fg: C.red };
-}
-
-function addPeriod(dateStr, periodicite) {
-  const dt = new Date(dateStr + "T00:00:00");
-  if (isNaN(dt)) return "";
-  if (periodicite === "Mensuelle") dt.setMonth(dt.getMonth() + 1);
-  else if (periodicite === "Trimestrielle") dt.setMonth(dt.getMonth() + 3);
-  else dt.setFullYear(dt.getFullYear() + 1);
-  return dt.toISOString().slice(0, 10);
-}
-
-const today = new Date().toISOString().slice(0, 10);
+const API_URL = "http://localhost:5000/api";
 
 const emptyForm = {
-  id: null, _id: null, numeroAdhesion: "", beneficiaire: "", numeroCarte: "",
-  mutuelle: MUTUELLES[0], typeCotisation: "Individuelle", montant: "",
-  periodicite: "Mensuelle", dateAdhesion: today, dateExpiration: "",
-  statutPaiement: "En attente", statutAdhesion: "En cours de validation",
+  _id: null,
+  beneficiaire: "",
+  numeroAdhesion: "",
+  dateDebut: "",
+  dateFin: "",
+  typeAdhesion: "Nouvelle",
+  statut: "Actif",
+  montant: "",
+  observation: "",
 };
 
-export default function App() {
-  const [items, setItems] = useState([]);
-  const [loaded, setLoaded] = useState(false);
-  const [query, setQuery] = useState("");
-  const [filterPaiement, setFilterPaiement] = useState("Tous");
-  const [filterAdhesion, setFilterAdhesion] = useState("Tous");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState(emptyForm);
-  const [confirmDelete, setConfirmDelete] = useState(null);
-  const [toast, setToast] = useState(null);
-  const [saving, setSaving] = useState(false);
+const getToday = () => {
+  const date = new Date();
+  return date.toISOString().split("T")[0];
+};
 
-  // CHARGEMENT DES DONNÉES DEPUIS LE BACKEND
-  useEffect(() => {
-    async function fetchAdhesions() {
-      try {
-        const res = await fetch(API_URL);
-        if (!res.ok) throw new Error("Erreur réseau");
-        const data = await res.json();
-        
-        // Normaliser les IDs (MongoDB utilise _id, SQL utilise id)
-        const normalized = data.map((item) => ({
-          ...item,
-          id: item.id || item._id,
-        }));
-        setItems(normalized);
-      } catch (err) {
-        setToast({ kind: "warn", msg: "Impossible de charger les adhésions depuis le serveur." });
-      } finally {
-        setLoaded(true);
-      }
+const formatDateForInput = (date) => {
+  if (!date) return "";
+
+  const d = new Date(date);
+
+  if (Number.isNaN(d.getTime())) return "";
+
+  return d.toISOString().split("T")[0];
+};
+
+const formatDate = (date) => {
+  if (!date) return "-";
+
+  const d = new Date(date);
+
+  if (Number.isNaN(d.getTime())) return "-";
+
+  return d.toLocaleDateString("fr-FR");
+};
+
+const getBeneficiaireName = (beneficiaire) => {
+  if (!beneficiaire) return "Bénéficiaire inconnu";
+
+  if (typeof beneficiaire === "string") {
+    return beneficiaire;
+  }
+
+  return `${beneficiaire.prenom || ""} ${beneficiaire.nom || ""}`.trim();
+};
+
+const getBeneficiaireNumero = (beneficiaire) => {
+  if (!beneficiaire || typeof beneficiaire === "string") {
+    return "";
+  }
+
+  return beneficiaire.numeroCMU || "";
+};
+
+const getToken = () => {
+  return localStorage.getItem("token");
+};
+
+const api = axios.create({
+  baseURL: API_URL,
+});
+
+api.interceptors.request.use(
+  (config) => {
+    const token = getToken();
+
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
+
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+const getErrorMessage = (error, defaultMessage) => {
+  if (error.response?.data?.message) {
+    return error.response.data.message;
+  }
+
+  if (error.response?.data?.errors?.length) {
+    return error.response.data.errors.join(", ");
+  }
+
+  if (error.response?.status === 401) {
+    return "Votre session a expiré. Veuillez vous reconnecter.";
+  }
+
+  return defaultMessage;
+};
+
+const Adhesions = () => {
+  const [adhesions, setAdhesions] = useState([]);
+  const [beneficiaires, setBeneficiaires] = useState([]);
+
+  const [loading, setLoading] = useState(true);
+  const [loadingBeneficiaires, setLoadingBeneficiaires] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const [search, setSearch] = useState("");
+
+  const [showModal, setShowModal] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+
+  const [selectedAdhesion, setSelectedAdhesion] = useState(null);
+
+  const [form, setForm] = useState({
+    ...emptyForm,
+    dateDebut: getToday(),
+  });
+
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  // ======================================================
+  // CHARGER LES ADHÉSIONS
+  // ======================================================
+  const fetchAdhesions = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const token = getToken();
+
+      if (!token) {
+        setError("Vous devez être connecté pour consulter les adhésions.");
+        return;
+      }
+
+      const response = await api.get("/adhesions");
+
+      setAdhesions(response.data?.adhesions || []);
+    } catch (err) {
+      console.error("Erreur chargement adhésions :", err);
+
+      setError(
+        getErrorMessage(
+          err,
+          "Impossible de récupérer les adhésions."
+        )
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ======================================================
+  // CHARGER LES BÉNÉFICIAIRES
+  // ======================================================
+  const fetchBeneficiaires = async () => {
+    try {
+      setLoadingBeneficiaires(true);
+
+      const token = getToken();
+
+      if (!token) {
+        return;
+      }
+
+      const response = await api.get("/beneficiaires");
+
+      /*
+       * Selon ton contrôleur bénéficiaires, la réponse peut être :
+       * { beneficiaires: [...] }
+       * ou directement [...]
+       */
+      const liste =
+        response.data?.beneficiaires ||
+        response.data?.data ||
+        (Array.isArray(response.data) ? response.data : []);
+
+      setBeneficiaires(liste);
+    } catch (err) {
+      console.error("Erreur chargement bénéficiaires :", err);
+
+      setError(
+        getErrorMessage(
+          err,
+          "Impossible de récupérer les bénéficiaires."
+        )
+      );
+    } finally {
+      setLoadingBeneficiaires(false);
+    }
+  };
+
+  // ======================================================
+  // CHARGEMENT INITIAL
+  // ======================================================
+  useEffect(() => {
     fetchAdhesions();
+    fetchBeneficiaires();
   }, []);
 
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 2600);
-    return () => clearTimeout(t);
-  }, [toast]);
+  // ======================================================
+  // OUVRIR MODAL AJOUT
+  // ======================================================
+  const handleOpenAdd = () => {
+    setForm({
+      ...emptyForm,
+      dateDebut: getToday(),
+    });
 
-  const stats = useMemo(() => {
-    const total = items.length;
-    const actives = items.filter((i) => i.statutAdhesion === "Active").length;
-    const montantTotal = items
-      .filter((i) => i.statutPaiement === "Payée")
-      .reduce((sum, i) => sum + (Number(i.montant) || 0), 0);
-    const enAttente = items.filter((i) => i.statutPaiement !== "Payée").length;
-    return { total, actives, montantTotal, enAttente };
-  }, [items]);
+    setSelectedAdhesion(null);
+    setError("");
+    setSuccess("");
+    setShowModal(true);
+  };
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return items
-      .filter((i) => (filterPaiement === "Tous" ? true : i.statutPaiement === filterPaiement))
-      .filter((i) => (filterAdhesion === "Tous" ? true : i.statutAdhesion === filterAdhesion))
-      .filter((i) => {
-        if (!q) return true;
-        return (
-          (i.beneficiaire && i.beneficiaire.toLowerCase().includes(q)) ||
-          (i.numeroAdhesion && i.numeroAdhesion.toLowerCase().includes(q)) ||
-          (i.numeroCarte && i.numeroCarte.toLowerCase().includes(q)) ||
-          (i.mutuelle && i.mutuelle.toLowerCase().includes(q))
-        );
-      })
-      .sort((a, b) => (a.dateAdhesion < b.dateAdhesion ? 1 : -1));
-  }, [items, query, filterPaiement, filterAdhesion]);
+  // ======================================================
+  // OUVRIR MODAL MODIFICATION
+  // ======================================================
+  const handleOpenEdit = (adhesion) => {
+    setSelectedAdhesion(adhesion);
 
-  function openNew() {
-    setForm(emptyForm);
-    setModalOpen(true);
-  }
+    setForm({
+      _id: adhesion._id,
 
-  function openEdit(item) {
-    setForm({ ...item });
-    setModalOpen(true);
-  }
+      beneficiaire:
+        typeof adhesion.beneficiaire === "object"
+          ? adhesion.beneficiaire?._id || ""
+          : adhesion.beneficiaire || "",
 
-  // SAUVEGARDE (POST / PUT) VERS LE BACKEND
-  async function save(e) {
+      numeroAdhesion: adhesion.numeroAdhesion || "",
+
+      dateDebut: formatDateForInput(adhesion.dateDebut),
+
+      dateFin: formatDateForInput(adhesion.dateFin),
+
+      typeAdhesion: adhesion.typeAdhesion || "Nouvelle",
+
+      statut: adhesion.statut || "Actif",
+
+      montant:
+        adhesion.montant !== undefined && adhesion.montant !== null
+          ? adhesion.montant
+          : "",
+
+      observation: adhesion.observation || "",
+    });
+
+    setError("");
+    setSuccess("");
+    setShowModal(true);
+  };
+
+  // ======================================================
+  // FERMER MODAL
+  // ======================================================
+  const handleCloseModal = () => {
+    if (saving) return;
+
+    setShowModal(false);
+    setSelectedAdhesion(null);
+
+    setForm({
+      ...emptyForm,
+      dateDebut: getToday(),
+    });
+
+    setError("");
+  };
+
+  // ======================================================
+  // MODIFIER LE FORMULAIRE
+  // ======================================================
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+
+    setForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  };
+
+  // ======================================================
+  // ENREGISTRER
+  // ======================================================
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.beneficiaire.trim() || !form.numeroAdhesion.trim() || !form.montant) return;
 
-    const targetId = form.id || form._id;
-    const payload = {
-      ...form,
-      dateExpiration: form.dateExpiration || addPeriod(form.dateAdhesion, form.periodicite),
-    };
+    setError("");
+    setSuccess("");
 
-    setSaving(true);
+    // Vérification frontend
+    if (!form.beneficiaire) {
+      setError("Veuillez sélectionner un bénéficiaire.");
+      return;
+    }
+
+    if (!form.numeroAdhesion.trim()) {
+      setError("Le numéro d'adhésion est obligatoire.");
+      return;
+    }
+
+    if (!form.dateDebut) {
+      setError("La date de début est obligatoire.");
+      return;
+    }
+
+    if (!form.dateFin) {
+      setError("La date de fin est obligatoire.");
+      return;
+    }
+
+    if (new Date(form.dateFin) < new Date(form.dateDebut)) {
+      setError(
+        "La date de fin doit être supérieure ou égale à la date de début."
+      );
+      return;
+    }
+
     try {
-      if (targetId) {
-        // Modification (PUT)
-        const res = await fetch(`${API_URL}/${targetId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) throw new Error("Erreur de modification");
-        const updated = await res.json();
-        const normUpdated = { ...updated, id: updated.id || updated._id };
+      setSaving(true);
 
-        setItems((prev) => prev.map((i) => ((i.id || i._id) === targetId ? normUpdated : i)));
-        setToast({ kind: "ok", msg: "Adhésion mise à jour." });
+      const payload = {
+        beneficiaire: form.beneficiaire,
+        numeroAdhesion: form.numeroAdhesion.trim(),
+        dateDebut: form.dateDebut,
+        dateFin: form.dateFin,
+        typeAdhesion: form.typeAdhesion,
+        statut: form.statut,
+        montant: Number(form.montant) || 0,
+        observation: form.observation.trim(),
+      };
+
+      let response;
+
+      if (selectedAdhesion?._id) {
+        response = await api.put(
+          `/adhesions/${selectedAdhesion._id}`,
+          payload
+        );
+
+        setSuccess("Adhésion modifiée avec succès.");
       } else {
-        // Création (POST)
-        const res = await fetch(API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) throw new Error("Erreur de création");
-        const created = await res.json();
-        const normCreated = { ...created, id: created.id || created._id };
+        response = await api.post("/adhesions", payload);
 
-        setItems((prev) => [...prev, normCreated]);
-        setToast({ kind: "ok", msg: "Adhésion enregistrée." });
+        setSuccess("Adhésion créée avec succès.");
       }
-      setModalOpen(false);
+
+      const adhesionModifiee =
+        response.data?.adhesion || response.data?.data;
+
+      if (selectedAdhesion?._id && adhesionModifiee) {
+        setAdhesions((previous) =>
+          previous.map((item) =>
+            item._id === adhesionModifiee._id
+              ? adhesionModifiee
+              : item
+          )
+        );
+      } else if (adhesionModifiee) {
+        setAdhesions((previous) => [
+          adhesionModifiee,
+          ...previous,
+        ]);
+      } else {
+        await fetchAdhesions();
+      }
+
+      setTimeout(() => {
+        setShowModal(false);
+        setSelectedAdhesion(null);
+
+        setForm({
+          ...emptyForm,
+          dateDebut: getToday(),
+        });
+
+        setSuccess("");
+      }, 700);
     } catch (err) {
-      setToast({ kind: "warn", msg: "Erreur lors de l'enregistrement." });
+      console.error("Erreur enregistrement adhésion :", err);
+
+      setError(
+        getErrorMessage(
+          err,
+          "Impossible d'enregistrer l'adhésion."
+        )
+      );
     } finally {
       setSaving(false);
     }
-  }
+  };
 
-  // SUPPRESSION (DELETE) DANS LE BACKEND
-  async function doDelete(item) {
-    const targetId = item.id || item._id;
+  // ======================================================
+  // SUPPRIMER
+  // ======================================================
+  const handleDelete = async (adhesion) => {
+    const confirmation = window.confirm(
+      `Voulez-vous vraiment supprimer l'adhésion "${adhesion.numeroAdhesion}" ?`
+    );
+
+    if (!confirmation) return;
+
     try {
-      const res = await fetch(`${API_URL}/${targetId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Erreur de suppression");
+      setDeleting(true);
+      setError("");
 
-      setItems((prev) => prev.filter((i) => (i.id || i._id) !== targetId));
-      setToast({ kind: "warn", msg: "Adhésion supprimée." });
+      await api.delete(`/adhesions/${adhesion._id}`);
+
+      setAdhesions((previous) =>
+        previous.filter((item) => item._id !== adhesion._id)
+      );
+
+      setSuccess("Adhésion supprimée avec succès.");
+
+      setTimeout(() => {
+        setSuccess("");
+      }, 2500);
     } catch (err) {
-      setToast({ kind: "warn", msg: "Impossible de supprimer l'adhésion." });
-    } finally {
-      setConfirmDelete(null);
-    }
-  }
+      console.error("Erreur suppression adhésion :", err);
 
-  const fontStyles = `
-    @import url('https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600;6..72,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
-    .font-display { font-family: 'Newsreader', serif; }
-    .font-body { font-family: 'IBM Plex Sans', sans-serif; }
-    .font-mono { font-family: 'IBM Plex Mono', monospace; }
-    .stub {
-      background-image: radial-gradient(circle at 0 16px, transparent 5px, ${C.sand} 5.5px);
-      background-size: 100% 32px;
-      background-repeat: repeat-y;
-      background-position: left top;
+      setError(
+        getErrorMessage(
+          err,
+          "Impossible de supprimer l'adhésion."
+        )
+      );
+    } finally {
+      setDeleting(false);
     }
-  `;
+  };
+
+  // ======================================================
+  // AFFICHER DÉTAILS
+  // ======================================================
+  const handleView = (adhesion) => {
+    setSelectedAdhesion(adhesion);
+    setShowDetails(true);
+  };
+
+  // ======================================================
+  // FERMER DÉTAILS
+  // ======================================================
+  const handleCloseDetails = () => {
+    setShowDetails(false);
+    setSelectedAdhesion(null);
+  };
+
+  // ======================================================
+  // RECHERCHE
+  // ======================================================
+  const filteredAdhesions = useMemo(() => {
+    const terme = search.toLowerCase().trim();
+
+    if (!terme) {
+      return adhesions;
+    }
+
+    return adhesions.filter((adhesion) => {
+      const beneficiaireNom = getBeneficiaireName(
+        adhesion.beneficiaire
+      ).toLowerCase();
+
+      const beneficiaireNumero = getBeneficiaireNumero(
+        adhesion.beneficiaire
+      ).toLowerCase();
+
+      const numeroAdhesion = (
+        adhesion.numeroAdhesion || ""
+      ).toLowerCase();
+
+      const typeAdhesion = (
+        adhesion.typeAdhesion || ""
+      ).toLowerCase();
+
+      const statut = (
+        adhesion.statut || ""
+      ).toLowerCase();
+
+      return (
+        beneficiaireNom.includes(terme) ||
+        beneficiaireNumero.includes(terme) ||
+        numeroAdhesion.includes(terme) ||
+        typeAdhesion.includes(terme) ||
+        statut.includes(terme)
+      );
+    });
+  }, [adhesions, search]);
+
+  // ======================================================
+  // STATISTIQUES
+  // ======================================================
+  const stats = useMemo(() => {
+    const total = adhesions.length;
+
+    const actifs = adhesions.filter(
+      (adhesion) => adhesion.statut === "Actif"
+    ).length;
+
+    const expires = adhesions.filter(
+      (adhesion) => adhesion.statut === "Expiré"
+    ).length;
+
+    const suspendus = adhesions.filter(
+      (adhesion) => adhesion.statut === "Suspendu"
+    ).length;
+
+    return {
+      total,
+      actifs,
+      expires,
+      suspendus,
+    };
+  }, [adhesions]);
+
+  // ======================================================
+  // COULEUR STATUT
+  // ======================================================
+  const getStatutClass = (statut) => {
+    switch (statut) {
+      case "Actif":
+        return "bg-green-100 text-green-700";
+
+      case "Expiré":
+        return "bg-red-100 text-red-700";
+
+      case "Suspendu":
+        return "bg-orange-100 text-orange-700";
+
+      default:
+        return "bg-gray-100 text-gray-700";
+    }
+  };
+
+  // ======================================================
+  // ICÔNE STATUT
+  // ======================================================
+  const getStatutIcon = (statut) => {
+    switch (statut) {
+      case "Actif":
+        return <CheckCircle size={15} />;
+
+      case "Expiré":
+        return <Clock size={15} />;
+
+      case "Suspendu":
+        return <Ban size={15} />;
+
+      default:
+        return <AlertCircle size={15} />;
+    }
+  };
 
   return (
-    <div className="font-body min-h-screen w-full" style={{ background: C.sand, color: C.ink }}>
-      <style>{fontStyles}</style>
+    <div className="min-h-screen bg-[#FAF8F5] p-4 md:p-6">
+      {/* ==================================================
+          EN-TÊTE
+      ================================================== */}
+      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-[#0E5D45]">
+            Gestion des adhésions
+          </h1>
 
-      {/* Header */}
-      <header className="border-b" style={{ borderColor: C.border, background: C.primary }}>
-        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6">
-          <div className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-              style={{ background: C.gold }}
-            >
-              <HeartPulse size={20} color={C.primaryDark} strokeWidth={2.4} />
-            </div>
-            <div>
-              <p
-                className="text-[11px] uppercase tracking-[0.22em] font-semibold"
-                style={{ color: C.goldLight }}
-              >
-                Couverture Maladie Universelle
-              </p>
-              <h1 className="font-display text-2xl sm:text-3xl font-semibold text-white leading-tight">
-                Adhésions & cotisations
-              </h1>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-6xl mx-auto px-5 sm:px-8 py-7">
-        {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-7">
-          <StatCard icon={FileText} label="Total adhésions" value={stats.total} />
-          <StatCard icon={CheckCircle2} label="Adhésions actives" value={stats.actives} accent={C.primary} />
-          <StatCard icon={Wallet} label="Cotisations perçues" value={fmtMontant(stats.montantTotal)} small />
-          <StatCard icon={Clock} label="Paiements à régulariser" value={stats.enAttente} accent={C.gold} />
+          <p className="mt-1 text-sm text-gray-500">
+            Gérez les adhésions des bénéficiaires de la CMU.
+          </p>
         </div>
 
-        {/* Toolbar */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-5">
-          <div className="relative flex-1">
-            <Search
-              size={16}
-              className="absolute left-3 top-1/2 -translate-y-1/2"
-              style={{ color: C.inkSoft }}
-            />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Rechercher par bénéficiaire, n° d'adhésion, mutuelle…"
-              className="w-full pl-9 pr-3 py-2.5 rounded-lg text-sm outline-none border"
-              style={{ borderColor: C.border, background: "white" }}
-            />
-          </div>
-          <select
-            value={filterPaiement}
-            onChange={(e) => setFilterPaiement(e.target.value)}
-            className="px-3 py-2.5 rounded-lg text-sm border outline-none bg-white"
-            style={{ borderColor: C.border }}
-          >
-            <option>Tous</option>
-            {STATUTS_PAIEMENT.map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-          <select
-            value={filterAdhesion}
-            onChange={(e) => setFilterAdhesion(e.target.value)}
-            className="px-3 py-2.5 rounded-lg text-sm border outline-none bg-white"
-            style={{ borderColor: C.border }}
-          >
-            <option>Tous</option>
-            {STATUTS_ADHESION.map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
+        <div className="flex gap-2">
           <button
-            onClick={openNew}
-            className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-semibold text-white shrink-0 hover:opacity-90"
-            style={{ background: C.primary }}
+            type="button"
+            onClick={() => {
+              fetchAdhesions();
+              fetchBeneficiaires();
+            }}
+            disabled={loading}
+            className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:opacity-50"
           >
-            <Plus size={16} /> Nouvelle adhésion
+            <RefreshCw
+              size={17}
+              className={loading ? "animate-spin" : ""}
+            />
+
+            Actualiser
+          </button>
+
+          <button
+            type="button"
+            onClick={handleOpenAdd}
+            className="flex items-center justify-center gap-2 rounded-lg bg-[#0E5D45] px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-[#0A4936]"
+          >
+            <Plus size={18} />
+
+            Nouvelle adhésion
           </button>
         </div>
+      </div>
 
-        {!loaded ? (
-          <div className="flex items-center justify-center py-24" style={{ color: C.inkSoft }}>
-            <Loader2 size={18} className="animate-spin mr-2" /> Chargement des adhésions depuis le serveur…
+      {/* ==================================================
+          MESSAGES
+      ================================================== */}
+      {error && (
+        <div className="mb-5 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
+          <AlertCircle className="mt-0.5 shrink-0" size={20} />
+
+          <div className="flex-1 text-sm">
+            <p className="font-semibold">Erreur</p>
+            <p>{error}</p>
           </div>
-        ) : filtered.length === 0 ? (
-          <EmptyState hasItems={items.length > 0} onNew={openNew} />
-        ) : (
-          <ul className="flex flex-col gap-3">
-            {filtered.map((item) => (
-              <AdhesionRow
-                key={item.id || item._id}
-                item={item}
-                onEdit={() => openEdit(item)}
-                onDelete={() => setConfirmDelete(item)}
-              />
-            ))}
-          </ul>
-        )}
 
-        <p className="text-[11px] mt-6 text-center" style={{ color: C.inkSoft }}>
-          {filtered.length} adhésion{filtered.length > 1 ? "s" : ""} affichée
-          {filtered.length > 1 ? "s" : ""} sur {items.length}
-          {saving ? " · enregistrement…" : ""}
-        </p>
-      </main>
-
-      {modalOpen && (
-        <FormModal form={form} setForm={setForm} onClose={() => setModalOpen(false)} onSubmit={save} saving={saving} />
-      )}
-
-      {confirmDelete && (
-        <ConfirmModal
-          item={confirmDelete}
-          onCancel={() => setConfirmDelete(null)}
-          onConfirm={() => doDelete(confirmDelete)}
-        />
-      )}
-
-      {toast && (
-        <div
-          className="fixed bottom-5 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-lg text-sm font-medium text-white shadow-lg z-50"
-          style={{ background: toast.kind === "warn" ? C.red : C.primaryDark }}
-        >
-          {toast.msg}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StatCard({ icon: Icon, label, value, accent, small }) {
-  return (
-    <div className="rounded-xl px-4 py-3.5 border bg-white flex items-center gap-3" style={{ borderColor: C.border }}>
-      <div
-        className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-        style={{ background: accent ? C.primaryLight : C.sandDark }}
-      >
-        <Icon size={16} style={{ color: accent || C.inkSoft }} />
-      </div>
-      <div className="min-w-0">
-        <p
-          className={`font-display font-semibold leading-none truncate ${small ? "text-base" : "text-xl"}`}
-          style={{ color: C.ink }}
-        >
-          {value}
-        </p>
-        <p className="text-[11px] mt-1 truncate" style={{ color: C.inkSoft }}>
-          {label}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function EmptyState({ hasItems, onNew }) {
-  return (
-    <div className="rounded-xl border border-dashed py-16 flex flex-col items-center text-center px-6" style={{ borderColor: C.border }}>
-      <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ background: C.primaryLight }}>
-        <FileText size={20} style={{ color: C.primary }} />
-      </div>
-      <p className="font-display text-lg font-semibold mb-1">
-        {hasItems ? "Aucun résultat" : "Aucune adhésion enregistrée"}
-      </p>
-      <p className="text-sm mb-5" style={{ color: C.inkSoft }}>
-        {hasItems
-          ? "Ajustez la recherche ou les filtres pour voir d'autres adhésions."
-          : "Enregistrez la première adhésion pour suivre les cotisations."}
-      </p>
-      <button onClick={onNew} className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-semibold text-white" style={{ background: C.primary }}>
-        <Plus size={16} /> Ajouter une adhésion
-      </button>
-    </div>
-  );
-}
-
-function AdhesionRow({ item, onEdit, onDelete }) {
-  const p = paiementStyle(item.statutPaiement);
-  const a = adhesionStyle(item.statutAdhesion);
-  const dLeft = daysUntil(item.dateExpiration);
-  const expSoon = dLeft !== null && dLeft <= 30 && dLeft >= 0;
-  const expired = dLeft !== null && dLeft < 0;
-
-  return (
-    <li className="stub rounded-xl border bg-white overflow-hidden pl-5" style={{ borderColor: C.border }}>
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4 pl-1 pr-4 py-4">
-        {/* left: identity */}
-        <div className="sm:w-56 shrink-0">
-          <p className="font-semibold text-sm truncate" style={{ color: C.ink }}>
-            {item.beneficiaire}
-          </p>
-          <p className="font-mono text-[11px] truncate" style={{ color: C.inkSoft }}>
-            {item.numeroAdhesion}
-          </p>
-          <p className="text-[11px] truncate mt-0.5" style={{ color: C.inkSoft }}>
-            Carte {item.numeroCarte || "—"}
-          </p>
-        </div>
-
-        {/* middle: details */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 flex-1 text-xs">
-          <Detail label="Mutuelle" value={item.mutuelle} />
-          <Detail label="Cotisation" value={`${item.typeCotisation} · ${item.periodicite}`} />
-          <Detail label="Montant" value={fmtMontant(item.montant)} />
-          <Detail
-            label="Échéance"
-            value={fmtDate(item.dateExpiration)}
-            warn={expired ? C.red : expSoon ? C.gold : null}
-          />
-        </div>
-
-        {/* right: statuses + actions */}
-        <div className="flex flex-col items-end gap-1.5 sm:w-48 shrink-0">
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold" style={{ background: p.bg, color: p.fg }}>
-            <p.Icon size={11} /> {item.statutPaiement}
-          </span>
-          <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold" style={{ background: a.bg, color: a.fg }}>
-            {item.statutAdhesion}
-          </span>
-          <div className="flex items-center gap-1 mt-1">
-            <button onClick={onEdit} className="w-8 h-8 rounded-lg flex items-center justify-center hover:opacity-70" style={{ background: C.sandDark }} aria-label="Modifier">
-              <Pencil size={14} style={{ color: C.ink }} />
-            </button>
-            <button onClick={onDelete} className="w-8 h-8 rounded-lg flex items-center justify-center hover:opacity-70" style={{ background: C.redLight }} aria-label="Supprimer">
-              <Trash2 size={14} style={{ color: C.red }} />
-            </button>
-          </div>
-        </div>
-      </div>
-    </li>
-  );
-}
-
-function Detail({ label, value, warn }) {
-  return (
-    <div className="min-w-0">
-      <p className="text-[10px] uppercase tracking-wide" style={{ color: C.inkSoft }}>
-        {label}
-      </p>
-      <p className="truncate font-medium flex items-center gap-1" style={{ color: warn || C.ink }}>
-        {warn && <CalendarDays size={11} />} {value}
-      </p>
-    </div>
-  );
-}
-
-function Field({ label, children, span }) {
-  return (
-    <label className={`flex flex-col gap-1 text-xs ${span ? "sm:col-span-2" : ""}`}>
-      <span className="font-semibold uppercase tracking-wide text-[10px]" style={{ color: C.inkSoft }}>
-        {label}
-      </span>
-      {children}
-    </label>
-  );
-}
-
-const inputCls = "px-3 py-2 rounded-lg border text-sm outline-none bg-white";
-
-function FormModal({ form, setForm, onClose, onSubmit, saving }) {
-  const upd = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-5">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <form onSubmit={onSubmit} className="relative bg-white w-full sm:max-w-xl sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 bg-white z-10" style={{ borderColor: C.border }}>
-          <h2 className="font-display text-lg font-semibold">
-            {form.id || form._id ? "Modifier l'adhésion" : "Nouvelle adhésion"}
-          </h2>
-          <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100">
+          <button
+            type="button"
+            onClick={() => setError("")}
+            className="text-red-500 hover:text-red-700"
+          >
             <X size={18} />
           </button>
         </div>
+      )}
 
-        <div className="px-6 py-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Bénéficiaire">
-            <input required value={form.beneficiaire} onChange={upd("beneficiaire")} placeholder="Nom et prénom" className={inputCls} style={{ borderColor: C.border }} />
-          </Field>
-          <Field label="N° de carte CMU">
-            <input value={form.numeroCarte} onChange={upd("numeroCarte")} placeholder="CMU-2026-00000" className={inputCls + " font-mono"} style={{ borderColor: C.border }} />
-          </Field>
-          <Field label="N° d'adhésion">
-            <input required value={form.numeroAdhesion} onChange={upd("numeroAdhesion")} placeholder="ADH-2026-00000" className={inputCls + " font-mono"} style={{ borderColor: C.border }} />
-          </Field>
-          <Field label="Mutuelle de santé">
-            <select value={form.mutuelle} onChange={upd("mutuelle")} className={inputCls} style={{ borderColor: C.border }}>
-              {MUTUELLES.map((m) => (
-                <option key={m}>{m}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Type de cotisation">
-            <select value={form.typeCotisation} onChange={upd("typeCotisation")} className={inputCls} style={{ borderColor: C.border }}>
-              {TYPES_COTIS.map((t) => (
-                <option key={t}>{t}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Périodicité">
-            <select value={form.periodicite} onChange={upd("periodicite")} className={inputCls} style={{ borderColor: C.border }}>
-              {PERIODICITES.map((p) => (
-                <option key={p}>{p}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Montant (FCFA)">
-            <input required type="number" min="0" value={form.montant} onChange={upd("montant")} placeholder="3500" className={inputCls} style={{ borderColor: C.border }} />
-          </Field>
-          <Field label="Statut de paiement">
-            <select value={form.statutPaiement} onChange={upd("statutPaiement")} className={inputCls} style={{ borderColor: C.border }}>
-              {STATUTS_PAIEMENT.map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Date d'adhésion">
-            <input type="date" value={form.dateAdhesion} onChange={upd("dateAdhesion")} className={inputCls} style={{ borderColor: C.border }} />
-          </Field>
-          <Field label="Date d'échéance">
-            <input type="date" value={form.dateExpiration} onChange={upd("dateExpiration")} placeholder="Calculée automatiquement si vide" className={inputCls} style={{ borderColor: C.border }} />
-          </Field>
-          <Field label="Statut de l'adhésion" span>
-            <select value={form.statutAdhesion} onChange={upd("statutAdhesion")} className={inputCls} style={{ borderColor: C.border }}>
-              {STATUTS_ADHESION.map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
-          </Field>
+      {success && (
+        <div className="mb-5 flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-4 text-green-700">
+          <CheckCircle size={20} />
+
+          <p className="text-sm font-medium">
+            {success}
+          </p>
+        </div>
+      )}
+
+      {/* ==================================================
+          STATISTIQUES
+      ================================================== */}
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">
+                Total adhésions
+              </p>
+
+              <p className="mt-1 text-2xl font-bold text-gray-800">
+                {stats.total}
+              </p>
+            </div>
+
+            <div className="rounded-lg bg-green-100 p-3 text-[#0E5D45]">
+              <CreditCard size={22} />
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t sticky bottom-0 bg-white" style={{ borderColor: C.border }}>
-          <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: C.sandDark, color: C.ink }}>
-            Annuler
-          </button>
-          <button disabled={saving} type="submit" className="px-4 py-2 rounded-lg text-sm font-semibold text-white flex items-center gap-2" style={{ background: C.primary }}>
-            {saving && <Loader2 size={14} className="animate-spin" />}
-            {form.id || form._id ? "Enregistrer les modifications" : "Enregistrer l'adhésion"}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
+        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">
+                Actives
+              </p>
 
-function ConfirmModal({ item, onCancel, onConfirm }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-5">
-      <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
-      <div className="relative bg-white w-full max-w-sm rounded-2xl p-6">
-        <div className="w-10 h-10 rounded-full flex items-center justify-center mb-3" style={{ background: C.redLight }}>
-          <AlertTriangle size={18} style={{ color: C.red }} />
+              <p className="mt-1 text-2xl font-bold text-green-600">
+                {stats.actifs}
+              </p>
+            </div>
+
+            <div className="rounded-lg bg-green-100 p-3 text-green-600">
+              <CheckCircle size={22} />
+            </div>
+          </div>
         </div>
-        <h3 className="font-display text-lg font-semibold mb-1">Supprimer cette adhésion ?</h3>
-        <p className="text-sm mb-5" style={{ color: C.inkSoft }}>
-          L'adhésion {item.numeroAdhesion} de {item.beneficiaire} sera définitivement retirée. Cette action est irréversible.
-        </p>
-        <div className="flex justify-end gap-2">
-          <button onClick={onCancel} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: C.sandDark, color: C.ink }}>
-            Annuler
-          </button>
-          <button onClick={onConfirm} className="px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.red }}>
-            Supprimer
-          </button>
+
+        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">
+                Expirées
+              </p>
+
+              <p className="mt-1 text-2xl font-bold text-red-600">
+                {stats.expires}
+              </p>
+            </div>
+
+            <div className="rounded-lg bg-red-100 p-3 text-red-600">
+              <Clock size={22} />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">
+                Suspendues
+              </p>
+
+              <p className="mt-1 text-2xl font-bold text-orange-600">
+                {stats.suspendus}
+              </p>
+            </div>
+
+            <div className="rounded-lg bg-orange-100 p-3 text-orange-600">
+              <Ban size={22} />
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* ==================================================
+          TABLEAU
+      ================================================== */}
+      <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+        {/* Recherche */}
+        <div className="border-b border-gray-100 p-4">
+          <div className="relative max-w-md">
+            <Search
+              size={18}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher une adhésion..."
+              className="w-full rounded-lg border border-gray-200 py-2.5 pl-10 pr-4 text-sm outline-none transition focus:border-[#0E5D45] focus:ring-2 focus:ring-[#0E5D45]/10"
+            />
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="flex min-h-[300px] items-center justify-center">
+            <div className="flex flex-col items-center gap-3 text-gray-500">
+              <Loader2
+                size={30}
+                className="animate-spin text-[#0E5D45]"
+              />
+
+              <p className="text-sm">
+                Chargement des adhésions...
+              </p>
+            </div>
+          </div>
+        ) : filteredAdhesions.length === 0 ? (
+          <div className="flex min-h-[300px] flex-col items-center justify-center px-4 text-center">
+            <CreditCard
+              size={45}
+              className="mb-3 text-gray-300"
+            />
+
+            <h3 className="font-semibold text-gray-700">
+              Aucune adhésion trouvée
+            </h3>
+
+            <p className="mt-1 text-sm text-gray-500">
+              {search
+                ? "Aucune adhésion ne correspond à votre recherche."
+                : "Aucune adhésion n'a encore été enregistrée."}
+            </p>
+
+            {!search && (
+              <button
+                type="button"
+                onClick={handleOpenAdd}
+                className="mt-4 flex items-center gap-2 rounded-lg bg-[#0E5D45] px-4 py-2 text-sm font-medium text-white hover:bg-[#0A4936]"
+              >
+                <Plus size={17} />
+                Ajouter une adhésion
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] text-left">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    N° adhésion
+                  </th>
+
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Bénéficiaire
+                  </th>
+
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Début
+                  </th>
+
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Fin
+                  </th>
+
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Type
+                  </th>
+
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Montant
+                  </th>
+
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Statut
+                  </th>
+
+                  <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-gray-100">
+                {filteredAdhesions.map((adhesion) => (
+                  <tr
+                    key={adhesion._id}
+                    className="transition hover:bg-gray-50"
+                  >
+                    <td className="px-5 py-4">
+                      <span className="font-semibold text-[#0E5D45]">
+                        {adhesion.numeroAdhesion}
+                      </span>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <div>
+                        <p className="font-medium text-gray-800">
+                          {getBeneficiaireName(
+                            adhesion.beneficiaire
+                          )}
+                        </p>
+
+                        {getBeneficiaireNumero(
+                          adhesion.beneficiaire
+                        ) && (
+                          <p className="mt-0.5 text-xs text-gray-500">
+                            {getBeneficiaireNumero(
+                              adhesion.beneficiaire
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    </td>
+
+                    <td className="px-5 py-4 text-sm text-gray-600">
+                      {formatDate(adhesion.dateDebut)}
+                    </td>
+
+                    <td className="px-5 py-4 text-sm text-gray-600">
+                      {formatDate(adhesion.dateFin)}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <span className="text-sm text-gray-700">
+                        {adhesion.typeAdhesion}
+                      </span>
+                    </td>
+
+                    <td className="px-5 py-4 text-sm font-medium text-gray-700">
+                      {Number(adhesion.montant || 0).toLocaleString(
+                        "fr-FR"
+                      )}{" "}
+                      FCFA
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${getStatutClass(
+                          adhesion.statut
+                        )}`}
+                      >
+                        {getStatutIcon(adhesion.statut)}
+                        {adhesion.statut}
+                      </span>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleView(adhesion)
+                          }
+                          title="Voir"
+                          className="rounded-lg p-2 text-gray-500 transition hover:bg-blue-50 hover:text-blue-600"
+                        >
+                          <Eye size={17} />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleOpenEdit(adhesion)
+                          }
+                          title="Modifier"
+                          className="rounded-lg p-2 text-gray-500 transition hover:bg-green-50 hover:text-[#0E5D45]"
+                        >
+                          <Edit size={17} />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleDelete(adhesion)
+                          }
+                          disabled={deleting}
+                          title="Supprimer"
+                          className="rounded-lg p-2 text-gray-500 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                        >
+                          {deleting ? (
+                            <Loader2
+                              size={17}
+                              className="animate-spin"
+                            />
+                          ) : (
+                            <Trash2 size={17} />
+                          )}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ==================================================
+          MODAL AJOUT / MODIFICATION
+      ================================================== */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl">
+            {/* Header */}
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-100 bg-white px-6 py-4">
+              <div>
+                <h2 className="text-lg font-bold text-[#0E5D45]">
+                  {selectedAdhesion
+                    ? "Modifier l'adhésion"
+                    : "Nouvelle adhésion"}
+                </h2>
+
+                <p className="mt-1 text-xs text-gray-500">
+                  Remplissez les informations de l'adhésion.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCloseModal}
+                disabled={saving}
+                className="rounded-lg p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Formulaire */}
+            <form
+              onSubmit={handleSubmit}
+              className="space-y-5 p-6"
+            >
+              {error && (
+                <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  <AlertCircle
+                    size={18}
+                    className="mt-0.5 shrink-0"
+                  />
+
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {/* Bénéficiaire */}
+              <div>
+                <label
+                  htmlFor="beneficiaire"
+                  className="mb-1.5 block text-sm font-medium text-gray-700"
+                >
+                  Bénéficiaire <span className="text-red-500">*</span>
+                </label>
+
+                <select
+                  id="beneficiaire"
+                  name="beneficiaire"
+                  value={form.beneficiaire}
+                  onChange={handleChange}
+                  disabled={
+                    loadingBeneficiaires || saving
+                  }
+                  required
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-[#0E5D45] focus:ring-2 focus:ring-[#0E5D45]/10 disabled:bg-gray-100"
+                >
+                  <option value="">
+                    {loadingBeneficiaires
+                      ? "Chargement des bénéficiaires..."
+                      : "Sélectionner un bénéficiaire"}
+                  </option>
+
+                  {beneficiaires.map((beneficiaire) => (
+                    <option
+                      key={beneficiaire._id}
+                      value={beneficiaire._id}
+                    >
+                      {getBeneficiaireName(
+                        beneficiaire
+                      )}
+                      {beneficiaire.numeroCMU
+                        ? ` — ${beneficiaire.numeroCMU}`
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+
+                {!loadingBeneficiaires &&
+                  beneficiaires.length === 0 && (
+                    <p className="mt-1.5 text-xs text-orange-600">
+                      Aucun bénéficiaire disponible.
+                      Créez d'abord un bénéficiaire.
+                    </p>
+                  )}
+              </div>
+
+              {/* Numéro + type */}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="numeroAdhesion"
+                    className="mb-1.5 block text-sm font-medium text-gray-700"
+                  >
+                    Numéro d'adhésion{" "}
+                    <span className="text-red-500">*</span>
+                  </label>
+
+                  <input
+                    id="numeroAdhesion"
+                    name="numeroAdhesion"
+                    type="text"
+                    value={form.numeroAdhesion}
+                    onChange={handleChange}
+                    placeholder="Ex : ADH-2026-0001"
+                    disabled={saving}
+                    required
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#0E5D45] focus:ring-2 focus:ring-[#0E5D45]/10 disabled:bg-gray-100"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="typeAdhesion"
+                    className="mb-1.5 block text-sm font-medium text-gray-700"
+                  >
+                    Type d'adhésion
+                  </label>
+
+                  <select
+                    id="typeAdhesion"
+                    name="typeAdhesion"
+                    value={form.typeAdhesion}
+                    onChange={handleChange}
+                    disabled={saving}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-[#0E5D45] focus:ring-2 focus:ring-[#0E5D45]/10 disabled:bg-gray-100"
+                  >
+                    <option value="Nouvelle">
+                      Nouvelle
+                    </option>
+
+                    <option value="Renouvellement">
+                      Renouvellement
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Dates */}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="dateDebut"
+                    className="mb-1.5 block text-sm font-medium text-gray-700"
+                  >
+                    Date de début{" "}
+                    <span className="text-red-500">*</span>
+                  </label>
+
+                  <input
+                    id="dateDebut"
+                    name="dateDebut"
+                    type="date"
+                    value={form.dateDebut}
+                    onChange={handleChange}
+                    disabled={saving}
+                    required
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#0E5D45] focus:ring-2 focus:ring-[#0E5D45]/10 disabled:bg-gray-100"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="dateFin"
+                    className="mb-1.5 block text-sm font-medium text-gray-700"
+                  >
+                    Date de fin{" "}
+                    <span className="text-red-500">*</span>
+                  </label>
+
+                  <input
+                    id="dateFin"
+                    name="dateFin"
+                    type="date"
+                    value={form.dateFin}
+                    onChange={handleChange}
+                    disabled={saving}
+                    required
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#0E5D45] focus:ring-2 focus:ring-[#0E5D45]/10 disabled:bg-gray-100"
+                  />
+                </div>
+              </div>
+
+              {/* Statut + montant */}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="statut"
+                    className="mb-1.5 block text-sm font-medium text-gray-700"
+                  >
+                    Statut
+                  </label>
+
+                  <select
+                    id="statut"
+                    name="statut"
+                    value={form.statut}
+                    onChange={handleChange}
+                    disabled={saving}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-[#0E5D45] focus:ring-2 focus:ring-[#0E5D45]/10 disabled:bg-gray-100"
+                  >
+                    <option value="Actif">
+                      Actif
+                    </option>
+
+                    <option value="Expiré">
+                      Expiré
+                    </option>
+
+                    <option value="Suspendu">
+                      Suspendu
+                    </option>
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="montant"
+                    className="mb-1.5 block text-sm font-medium text-gray-700"
+                  >
+                    Montant
+                  </label>
+
+                  <div className="relative">
+                    <input
+                      id="montant"
+                      name="montant"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={form.montant}
+                      onChange={handleChange}
+                      placeholder="0"
+                      disabled={saving}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2.5 pr-16 text-sm outline-none transition focus:border-[#0E5D45] focus:ring-2 focus:ring-[#0E5D45]/10 disabled:bg-gray-100"
+                    />
+
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                      FCFA
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Observation */}
+              <div>
+                <label
+                  htmlFor="observation"
+                  className="mb-1.5 block text-sm font-medium text-gray-700"
+                >
+                  Observation
+                </label>
+
+                <textarea
+                  id="observation"
+                  name="observation"
+                  value={form.observation}
+                  onChange={handleChange}
+                  rows="3"
+                  placeholder="Ajouter une observation..."
+                  disabled={saving}
+                  className="w-full resize-none rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#0E5D45] focus:ring-2 focus:ring-[#0E5D45]/10 disabled:bg-gray-100"
+                />
+              </div>
+
+              {/* Boutons */}
+              <div className="flex justify-end gap-3 border-t border-gray-100 pt-5">
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  disabled={saving}
+                  className="rounded-lg border border-gray-200 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={saving || loadingBeneficiaires}
+                  className="flex items-center gap-2 rounded-lg bg-[#0E5D45] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#0A4936] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saving && (
+                    <Loader2
+                      size={17}
+                      className="animate-spin"
+                    />
+                  )}
+
+                  {saving
+                    ? "Enregistrement..."
+                    : selectedAdhesion
+                    ? "Modifier"
+                    : "Créer l'adhésion"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================
+          MODAL DÉTAILS
+      ================================================== */}
+      {showDetails && selectedAdhesion && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+              <div>
+                <h2 className="text-lg font-bold text-[#0E5D45]">
+                  Détails de l'adhésion
+                </h2>
+
+                <p className="text-sm text-gray-500">
+                  {selectedAdhesion.numeroAdhesion}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCloseDetails}
+                className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-5 p-6">
+              {/* Bénéficiaire */}
+              <div className="rounded-lg bg-gray-50 p-4">
+                <p className="mb-1 text-xs font-semibold uppercase text-gray-500">
+                  Bénéficiaire
+                </p>
+
+                <p className="font-semibold text-gray-800">
+                  {getBeneficiaireName(
+                    selectedAdhesion.beneficiaire
+                  )}
+                </p>
+
+                {getBeneficiaireNumero(
+                  selectedAdhesion.beneficiaire
+                ) && (
+                  <p className="mt-1 text-sm text-gray-500">
+                    N° CMU :{" "}
+                    {getBeneficiaireNumero(
+                      selectedAdhesion.beneficiaire
+                    )}
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-semibold uppercase text-gray-500">
+                    Numéro d'adhésion
+                  </p>
+
+                  <p className="mt-1 font-medium text-gray-800">
+                    {selectedAdhesion.numeroAdhesion}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase text-gray-500">
+                    Type
+                  </p>
+
+                  <p className="mt-1 text-gray-800">
+                    {selectedAdhesion.typeAdhesion}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase text-gray-500">
+                    Date de début
+                  </p>
+
+                  <p className="mt-1 text-gray-800">
+                    {formatDate(
+                      selectedAdhesion.dateDebut
+                    )}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase text-gray-500">
+                    Date de fin
+                  </p>
+
+                  <p className="mt-1 text-gray-800">
+                    {formatDate(
+                      selectedAdhesion.dateFin
+                    )}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase text-gray-500">
+                    Montant
+                  </p>
+
+                  <p className="mt-1 font-medium text-gray-800">
+                    {Number(
+                      selectedAdhesion.montant || 0
+                    ).toLocaleString("fr-FR")}{" "}
+                    FCFA
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase text-gray-500">
+                    Statut
+                  </p>
+
+                  <span
+                    className={`mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${getStatutClass(
+                      selectedAdhesion.statut
+                    )}`}
+                  >
+                    {getStatutIcon(
+                      selectedAdhesion.statut
+                    )}
+
+                    {selectedAdhesion.statut}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold uppercase text-gray-500">
+                  Observation
+                </p>
+
+                <p className="mt-1 rounded-lg bg-gray-50 p-3 text-sm text-gray-700">
+                  {selectedAdhesion.observation ||
+                    "Aucune observation."}
+                </p>
+              </div>
+
+              <div className="flex justify-end border-t border-gray-100 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseDetails}
+                  className="rounded-lg bg-[#0E5D45] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#0A4936]"
+                >
+                  Fermer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+};
+
+export default Adhesions;
