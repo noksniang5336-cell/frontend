@@ -55,14 +55,14 @@ const initialForm = {
 const Spinner = ({ size = "20px", color = "#075C37" }) => {
   return (
     <span
+      role="status"
+      aria-label="Chargement"
+      className="inline-block shrink-0 rounded-full border-[3px] border-gray-200"
       style={{
-        display: "inline-block",
         width: size,
         height: size,
-        border: `3px solid #e5e7eb`,
         borderTopColor: color,
-        borderRadius: "50%",
-        animation: "cmu-spin 0.8s linear infinite",
+        boxSizing: "border-box",
       }}
     />
   );
