@@ -8,7 +8,7 @@ import {
   Pencil,
   Trash2,
   X,
-  RefreshCw,
+  
 } from "lucide-react";
 const API_URL = "http://localhost:5000/api";
 
@@ -626,20 +626,7 @@ const Adhesions = () => {
               />
             </div>
 
-            <button
-              type="button"
-              onClick={chargerAdhesions}
-              disabled={loading}
-              className="flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-            >
-              {loading ? (
-                <Spinner size="18px" />
-              ) : (
-                <RefreshCw size={18} />
-              )}
-
-              Actualiser
-            </button>
+          
           </div>
         </div>
 
