@@ -37,11 +37,11 @@ const Rapports = () => {
       setError("");
 
       const response = await getRapport(
-        typeRapport,
-        periode
-      );
+  typeRapport,
+  periode
+);
 
-      setData(response.data);
+setData(response.data);
     } catch (error) {
       console.error(error);
 
